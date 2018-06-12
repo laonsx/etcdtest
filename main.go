@@ -1,35 +1,53 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io/ioutil"
+	"os"
+	"time"
 
 	"github.com/coreos/etcd/clientv3"
+	"github.com/spf13/viper"
+	_ "github.com/spf13/viper/remote"
 )
 
 func main() {
 
 	fmt.Println("=====start=====")
 
-	config := clientv3.Config{
-		Endpoints: []string{"localhost:2379"},
-	}
-	cli, err := clientv3.New(config)
-	if err != nil {
+	//etcd clienv3 test
+	/*	config := clientv3.Config{
+			Endpoints: []string{"localhost:2379"},
+		}
+		cli, err := clientv3.New(config)
+		if err != nil {
 
-		panic(err.Error())
-	}
+			panic(err.Error())
+		}
 
-	etcdTest.client = cli
-	go etcdTest.watch()
+		etcdTest.client = cli
 
-	etcdTest.put()
+		go etcdTest.watch()
 
-	etcdTest.lease()
+		etcdTest.put()
 
-	go etcdTest.keepalive()
+		etcdTest.lease()
 
-	etcdTest.get()
+		go etcdTest.keepAlive()
+
+		etcdTest.get()
+
+		etcdTest.addFile()
+
+		etcdTest.getFile()*/
+
+	//etcd & viper test (need crypt to add key value by use client_api2)
+
+	viperEtcdTest()
+
+	watchChangesInEtcd()
 
 	fmt.Println("======end======")
 
@@ -141,7 +159,7 @@ func (et *EtcdTest) lease() {
 	fmt.Println("config_ttl_20_onceresp", onceAliveChan.String())
 }
 
-func (et *EtcdTest) keepalive() {
+func (et *EtcdTest) keepAlive() {
 
 	lease := clientv3.NewLease(et.client)
 	aliveChan, err := lease.KeepAlive(context.TODO(), et.leaseId)
@@ -157,4 +175,96 @@ func (et *EtcdTest) keepalive() {
 		fmt.Println("=====alive=end=====")
 	}
 
+}
+
+func (et *EtcdTest) addFile() {
+
+	file, err := os.Open("loveauth.default.yaml")
+	if err != nil {
+
+		panic(err.Error())
+	}
+	defer file.Close()
+
+	data, err := ioutil.ReadAll(file)
+	if err != nil {
+
+		panic(err.Error())
+	}
+
+	_, err = et.client.Put(context.TODO(), "loveauth", string(data))
+	if err != nil {
+
+		panic(err.Error())
+	}
+}
+
+func (et *EtcdTest) getFile() {
+
+	fmt.Println("====getfile====")
+	resp, err := et.client.Get(context.TODO(), "loveauth")
+	if err != nil {
+
+		panic(err.Error())
+	}
+
+	setting := viper.New()
+	setting.SetConfigType("yaml")
+
+	for _, msg := range resp.Kvs {
+
+		setting.ReadConfig(bytes.NewBuffer(msg.Value))
+		fmt.Println(string(msg.Key), "=>", string(msg.Value))
+	}
+
+	fmt.Println("viper.getstring", setting.GetString("redis.host"))
+	fmt.Println("===getfile=end===")
+}
+
+func viperEtcdTest() {
+
+	fmt.Println("====viper=etcd====")
+
+	setting := viper.New()
+
+	setting.AddRemoteProvider("etcd", "http://localhost:2379", "/config/loveauth.default.yaml")
+	setting.SetConfigType("yaml")
+	err := setting.ReadRemoteConfig()
+	if err != nil {
+
+		panic(err)
+	}
+
+	fmt.Println("viper.getstring", setting.GetString("redis.host"))
+	fmt.Println("===viper=etcd=end===")
+}
+
+func watchChangesInEtcd() {
+
+	var runtime_viper = viper.New()
+
+	runtime_viper.AddRemoteProvider("etcd", "http://localhost:2379", "/config/loveauth.default.yaml")
+	runtime_viper.SetConfigType("yaml")
+
+	err := runtime_viper.ReadRemoteConfig()
+	if err != nil {
+
+		panic(err.Error())
+	}
+
+	go func() {
+		for {
+			fmt.Println("===viper=etcd=wathch===")
+			time.Sleep(time.Second * 5)
+
+			err := runtime_viper.WatchRemoteConfig()
+			if err != nil {
+
+				panic(err.Error())
+			}
+
+			fmt.Println("viper.getstring", runtime_viper.GetString("redis.host"))
+			fmt.Println("===viper=etcd=wathch=end===")
+		}
+	}()
 }
